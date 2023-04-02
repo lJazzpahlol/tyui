@@ -1,0 +1,230 @@
+using System;
+using System.Diagnostics;
+using System.Collections.Generic;
+
+
+namespace HyperElk.Core
+{
+
+    public class ShadowPriest : CombatRoutine
+    {
+        private string VersionNumber = "1.0.0";
+        private int playerLevel => API.PlayerLevel;
+        private bool inRange => API.TargetRange <= 36;
+
+		// Shadow Buffs
+		private string VampiricEmbrace = "Vampiric Embrace", InnerFire = "Inner Fire", ShadowForm = "Shadowform", ShadowWeaving = "Shadow Weaving",
+					   PowerWordFortitude = "Power Word Fortitude", POPowerWordFortitude = "Prayer of Fortitude", DivineSpirit = "Divine Spirit",
+					   PODivineSpirit = "Prayer of Divine Spirit", ShadowProt = "Shadow Protection", POShadowProt = "Prayer of Shadow Protection",
+					   FlareOfTheHeavens = "Flare of the Heavens", DyingCurse = "Dying Curse", Starlight = "Starlight", Bloodlust = "Bloodlust", BloodlustBuff = "BloodlustBuff";
+
+		// Shadowspells
+		private string ShadowWordPain = "Shadow Word: Pain", VampiricTouch = "Vampiric Touch", DevouringPlague = "Devouring Plague", MindFlay = "Mind Flay",
+					   MindBlast = "Mind Blast", ShadowWordDeath = "Shadow Word: Death", Shadowfiend = "Shadowfiend", Trinket1 = "Trinket1",
+					   Trinket2 = "Trinket2", Stoppy = "Stopcast", Gloves = "Engineering Gloves", MO = "Mouseover", MindSear = "Mind Sear",
+					   Dispersion = "Dispersion", Fade = "Fade", InnerFocus = "Inner Focus", EatingBuff = "Food Buff", MageEatingBuff = "Mage Food Buff",
+					   Shoot = "Shoot", BigBang = "Big Bang", DispelMagic = "Dispel Magic", Silence = "Silence";
+
+		// Debuff
+		private string ShadowMastery = "Shadow Mastery";
+		
+		private string SaroBomb = "Saronite Bomb";
+		private string SapperCharge = "Global Thermal Sapper Charge";
+		
+		private const string VTTTDThresholdID = "VTTTDThreshold";
+		private const string DPTTDThresholdID = "DPTTDThreshold";
+		private const string SWPTTDThresholdID = "SWPTTDThreshold";
+		private const string MF2DelayID = "MF2Delay";
+		private const string MindFlayDelayID = "MindFlayDelay";
+
+		// Toggle
+		private string DPMove = "DPMove", Vezax = "Vezax", MOToggle = "MO", Sear = "OnlySear", NoMB = "MB/D OFF";
+
+		private string ShadowCrash = "Shadow Crash";
+
+		private int MF2Delay => API.numbPercentListLong[CombatRoutine.GetPropertyInt(MF2DelayID)];
+
+        // private int MF2Delay = 15;
+		
+		// Boss Specific
+		private bool GlovesReady => API.Classic_GloveEnchantAvail;
+		private bool hasDots => API.TargetHasDebuff(DevouringPlague) && API.TargetHasDebuff(VampiricTouch) && API.TargetHasDebuff(ShadowWordPain);
+		private bool isSearing => API.CurrentCastSpellID("player") == 53023;
+		private bool isFlaying => API.CurrentCastSpellID("player") == 48156;
+		private bool isBoss => API.TargetIsBoss;
+		// private bool OnlyFlayGuidList => API.TargetGUIDNPCID == 33168 || API.TargetGUIDNPCID == 34057 || API.TargetGUIDNPCID == 32955;
+		private bool LastShadowCast => (API.PlayerLastSpell != VampiricTouch || API.PlayerLastSpell != MindBlast);
+		private bool IsNotEating => (!API.PlayerHasBuff(MageEatingBuff) || !API.PlayerHasBuff(EatingBuff));
+
+		// Add a list of NPC IDs
+		private List<int> OnlyFlayGuidList => new List<int> 
+			{ 33168, 
+			  34057, 
+			  32955 
+			};
+			
+		private bool IsTargetInFlayGuidList() => OnlyFlayGuidList.Contains(API.TargetGUIDNPCID);
+		
+		private int VTTTDThreshold => API.numbPercentListLong[CombatRoutine.GetPropertyInt(VTTTDThresholdID)];
+		private int DPTTDThreshold => API.numbPercentListLong[CombatRoutine.GetPropertyInt(DPTTDThresholdID)];
+		private int SWPTTDThreshold => API.numbPercentListLong[CombatRoutine.GetPropertyInt(SWPTTDThresholdID)];
+		private int MindFlayDelay => CombatRoutine.GetPropertyInt(MindFlayDelayID);
+
+		
+		private bool devouringPlagueRefreshedWithBloodlust = false;
+		private bool hasCastDevouringPlagueWithBloodlust = false;
+
+
+	
+		
+
+		
+		public override void Initialize()
+        {
+            CombatRoutine.isWOLTKRotation();
+            CombatRoutine.Name = "Shadow Priest " + VersionNumber + " by Lost. \n";
+            API.WriteLog("\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \n" +
+                "Shadow Priest PVE.\n" +
+                "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+            CombatRoutine.isAutoBindReady = true;
+           
+		   var items = new (string name, int id, string flag)[]
+			{
+				// Shadow buffs
+				(VampiricEmbrace, 15286, null), (InnerFire, 48168, null), (ShadowForm, 15473, null), (ShadowWeaving, 15258, null),
+				(ShadowCrash, 63277, null), (ShadowProt, 48169, null), (POShadowProt, 48170, null), (DivineSpirit, 48073, null),
+				(PODivineSpirit, 48074, null), (PowerWordFortitude, 48161, null), (POPowerWordFortitude, 48162, null),
+				(Dispersion, 48585, null), (Fade, 586, null), (InnerFocus, 14751, null), (FlareOfTheHeavens, 64713, null),
+				(EatingBuff, 43183, null), (MageEatingBuff, 57073, null), (DyingCurse, 60494, null), (Starlight, 62807, null), (Bloodlust, 2825, null), (BloodlustBuff, 2825, null),
+
+				// Shadow spells
+				(ShadowWordPain, 48125, null), (VampiricTouch, 48160, null), (DevouringPlague, 48300, null), (MindFlay, 48156, null),
+				(MindBlast, 48127, null), (ShadowWordDeath, 48158, null), (Shadowfiend, 34433, null),
+				(MindSear, 53023, "D1"), (Dispersion, 48585, "D1"), (Fade, 586, "D1"), (InnerFocus, 14751, "D1"), (BigBang, 64443, null), (Shoot, 0, null), (DispelMagic, 64443, null), (Silence, 64443, null),
+
+				// Items
+				// (SaroBomb, 41119, null), (SapperCharge, 42641, null),
+
+				// Debuffs
+				(ShadowMastery, 17800, null)
+			};
+			
+			
+
+			foreach (var item in items)
+			{
+				if (item.flag == "D1")
+					AddSpell(item.name, item.id, item.flag);
+				else
+				{
+					AddBuff(item.name, item.id);
+					AddSpell(item.name, item.id);
+					AddDebuff(item.name, item.id);
+				}
+			}
+			
+					
+		private List<string> dispellableMagicDebuffs = new List<string>
+			{
+				"5782",  // Fear
+				"118",   // Polymorph
+				"12826", // Polymorph (higher rank)
+				"15487", // Silence
+				"8122",  // Psychic Scream
+				"28272", // Polymorph (Pig)
+				"28271", // Polymorph (Turtle)
+				"20066", // Repentance
+				"9484",  // Shackle Undead
+				"5588",  // Hand of Justice
+				"3355",  // Freezing Trap (Ice Trap)
+				"47476", // Strangulate
+				"41450", // Blessing of Protection
+			};
+
+			private List<string> prioritySpellIds = new List<string>
+			{
+				25314, // Greater Heal
+				25235, // Flash Heal
+				25363, // Heal
+				25308, // Prayer of Healing
+				27137, // Holy Light
+				27134, // Flash of Light
+				26980, // Regrowth
+				26999, // Healing Touch
+				25423, // Chain Heal
+				25420, // Lesser Healing Wave
+				25396, // Healing Wave
+				12826, // Polymorph
+				33786, // Cyclone
+				51514, // Hex
+				6215,  // Fear
+				6358,  // Seduction
+				17928, // Howl of Terror
+				10890, // Psychic Scream
+				27139, // Repentance
+				27179, // Hammer of Justice
+				1860,  // Hibernate
+			};
+
+
+			
+			/* //Items
+			AddItem(SaroBomb, 41119);
+			AddItem(SapperCharge, 42641);
+			
+			
+			AddProp(VTTTDThresholdID, "Vampiric Touch TTD Threshold", API.numbPercentListLong, "Minimum time until target dies to cast Vampiric Touch (in seconds)", "Time to Die", 7);
+			AddProp(DPTTDThresholdID, "Devouring Plague TTD Threshold", API.numbPercentListLong, "Minimum time until target dies to cast Devouring Plague (in seconds)", "Time to Die", 7);
+			AddProp(SWPTTDThresholdID, "Shadow Word: Pain TTD Threshold", API.numbPercentListLong, "Minimum time until target dies to cast Shadow Word: Pain(in seconds)", "Time to Die", 7);
+			
+			AddProp(MF2DelayID, "MF2 Delay", API.numbPercentListLong, "Estimated MF2 delay in milliseconds", "Delay Settings", 15);
+			AddProp(MindFlayDelayID, "Mind Flay to Mind Flay Delay", 30, "Delay between Mind Flay casts, set to a higher value to increase delay", "Delay Settings");
+
+			
+			
+
+            var toggles = new string[] { DPMove, Vezax, MOToggle, Sear, NoMB };
+
+			foreach (string toggle in toggles)
+			{
+				AddToggle(toggle);
+			}
+			
+			CombatRoutine.AddMacro("Stopcast", "D1", "None", "None", @"/stopcasting");
+			CombatRoutine.AddMacro("Trinket1", "D1", "None", "None", @"/use 13");
+			CombatRoutine.AddMacro("Trinket2", "D1", "None", "None", @"/use 14");
+			CombatRoutine.AddMacro("Gloves", "D1", "None", "None", @"/use 10");
+			CombatRoutine.AddMacro(ShadowWordPain + MO, "D1", "None", "None", @"/cast [@mouseover, harm, nodead] #48125#");
+			CombatRoutine.AddMacro(VampiricTouch + MO, "D1", "None", "None", @"/cast [@mouseover, harm, nodead] #48160#");
+			CombatRoutine.AddMacro("SaroBomb", "D1", "None", "None", @"/cast [@cursor] Saronite Bomb");
+			CombatRoutine.AddMacro("SapperCharge", "D1", "None", "None", @"/cast Global Thermal Sapper Charge"); */
+			
+			
+          
+		}
+		public override void CombatPulse()
+		{
+			
+		}
+
+
+
+
+		
+		
+
+        public override void OutOfCombatPulse()
+				{
+				
+				}
+
+
+
+        public override void Pulse()
+        {
+
+
+        }
+
+    }
+}
